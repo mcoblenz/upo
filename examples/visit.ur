@@ -285,7 +285,7 @@ structure Admits = struct
                                WHERE admit.AdmitId = {[id]});
         attending <- source attending;
 
-        Theme.simple ("MIT CS Admitted PhD Student Portal (" ^ name ^ ")")
+        Theme.simple ("CMU CS Admitted PhD Student Portal (" ^ name ^ ")")
                   (Ui.seq
                        (Ui.const <xml>
                          <dyn signal={att <- signal attending;
