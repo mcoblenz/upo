@@ -32,28 +32,25 @@ val admitShow : show {AdmitName : string} = mkShow (fn r => r.AdmitName)
 val admitRead : read {AdmitName : string} = mkRead' (fn s => Some {AdmitName = s}) "admitName"
 
 (* Legal meeting times *)
-table time : { Hour : int, Minute : int }
-  PRIMARY KEY (Hour, Minute)
+table time : { Time : time}
+  PRIMARY KEY (Time)
 
-fun pad s =
-    let
-        val s' = show s
-    in
-        if String.length s' = 1 then
-            "0" ^ s'
-        else
-            s'
-    end
-
-val timeShow : show {Hour : int, Minute : int} =
-    mkShow (fn r => show r.Hour ^ ":" ^ pad r.Minute)
-val timeRead : read {Hour : int, Minute : int} =
-    mkRead' (fn s => case String.split s #":" of
+val timeShow : show {Time: time} =
+    mkShow (fn r => show r.Time)
+val timeRead : read {Time: time} =
+    mkRead' (fn s => 
+    		case (read s) of 
+    			(Some s') => Some {Time = s'}
+    			    	| _ => None) "time"
+    
+    (*
+    case String.split s #":" of
                          None => None
                        | Some (h, m) =>
                          case (read h, read m) of
                              (Some h, Some m) => Some {Hour = h, Minute = m}
                            | _ => None) "time"
+                           *)
 
 (* Scheduled dinners for specific research areas *)
 table dinner : { Dinner : string, Description : string }
@@ -368,8 +365,7 @@ structure Locals = struct
     structure EditTime = EditGrid.Make(struct
                                            con rest = []
                                            val tab = time
-                                           val labels = {Hour = "Hour",
-                                                         Minute = "Minute"}
+                                           val labels = {Time = "Time"}
                                            val authorized = amAdmin
                                        end)
 
