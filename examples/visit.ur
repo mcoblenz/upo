@@ -12,7 +12,7 @@ table schedulingStarted : { Started : bool }
 (* Local CSAIL people *)
 table local : { CsailId : string, LocalName : string, IsAdmin : bool, IsPI : bool, Attending : bool,
                 FiveMinute : string, PhoneNumber : string, DietaryRestriction : string, Office : string,
-                Transport : string }
+                Transport : string, Password : string }
   PRIMARY KEY CsailId,
   CONSTRAINT LocalName UNIQUE LocalName
 
@@ -43,14 +43,6 @@ val timeRead : read {Time: time} =
     			(Some s') => Some {Time = s'}
     			    	| _ => None) "time"
     
-    (*
-    case String.split s #":" of
-                         None => None
-                       | Some (h, m) =>
-                         case (read h, read m) of
-                             (Some h, Some m) => Some {Hour = h, Minute = m}
-                           | _ => None) "time"
-                           *)
 
 (* Scheduled dinners for specific research areas *)
 table dinner : { Dinner : string, Description : string }
@@ -65,11 +57,12 @@ task initialize = fn () =>
   if anyUsers then
       return ()
   else
-      dml (INSERT INTO local(CsailId, LocalName, IsAdmin, IsPI, Attending, Office, PhoneNumber, DietaryRestriction, FiveMinute, Transport)
-           VALUES ('admin', 'Admin', TRUE, TRUE, FALSE, '', '', '', '', ''))
+      dml (INSERT INTO local(CsailId, LocalName, IsAdmin, IsPI, Attending, Office, PhoneNumber, DietaryRestriction, FiveMinute, Transport, Password)
+           VALUES ('admin', 'Admin', TRUE, TRUE, FALSE, '', '', '', '', '', 'SIGBOVIK'))
 
 (* The real app uses client certificates, but here we'll do cookies for convenience. *)
 cookie localC : string
+cookie localPassword : string
 
 (* Find the common name of the authenticated user (via SSL certificates),
  * remembering this person in the DB, if successful. *)
@@ -79,6 +72,7 @@ val authCsail =
         None => error <xml>You haven't set the cookie with your name.</xml>
       | Some r => return r
 
+
 (* Fail if not authenticated as an admin. *)
 val amAdmin =
     user <- authCsail;
@@ -86,6 +80,20 @@ val amAdmin =
               FROM local
               WHERE local.LocalName = {[user]}
                 AND local.IsAdmin)
+
+val authAdmin (username, password) =
+    oneRowE1 (SELECT COUNT( * ) > 0
+              FROM local
+              WHERE local.LocalName = {[username]}
+                AND local.IsAdmin
+                AND local.Password = {[password]})
+
+val authLocal (username, password) =
+    oneRowE1 (SELECT COUNT( * ) > 0
+              FROM local
+              WHERE local.LocalName = {[username]}
+                AND local.Password = {[password]})
+
 
 val requireAdmin =
     isAdmin <- amAdmin;
@@ -341,7 +349,8 @@ structure Locals = struct
                                                           Office = "Office",
                                                           PhoneNumber = "Phone#",
                                                           DietaryRestriction = "Dietary Restriction",
-                                                          Transport = "Transport"}
+                                                          Transport = "Transport",
+                                                          Password = "Password"}
                                             val authorized = amAdmin
                                         end)
 
@@ -380,7 +389,7 @@ structure Locals = struct
     structure InputPi = InputStrings.Make(struct
                                               val const = {}
                                               con given = [LocalName = _]
-                                              con fixed = [CsailId = _, IsAdmin = _, IsPI = _, Attending = _]
+                                              con fixed = [CsailId = _, IsAdmin = _, IsPI = _, Attending = _, Password = _]
                                               val tab = local
                                               val chosenLabels = {FiveMinute = "3-Minute-Madness Talk Title (if you want to give one the morning of March 6)",
                                                                   PhoneNumber = "Mobile Phone#",
@@ -555,6 +564,7 @@ structure Locals = struct
     fun importPIs s =
         requireAdmin;
         List.app (fn r =>
+                      
                      alreadyUsing <- oneRowE1 (SELECT COUNT( * ) > 0
                                                FROM local
                                                WHERE local.CsailId = {[r.CsailId]}
@@ -562,10 +572,11 @@ structure Locals = struct
                      if alreadyUsing then
                          return ()
                      else
+                         newPassword <- rand;
                          Sql.easy_insertOrUpdate [[CsailId = _]]
                                                  local (r ++ {IsAdmin = False, IsPI = True, Attending = False,
                                                               PhoneNumber = "", DietaryRestriction = "", FiveMinute = "",
-                                                              Transport = ""}))
+                                                              Transport = "", Password = show newPassword}))
                  (Csv.parse s)
 
     fun importAdmits s =
@@ -651,6 +662,9 @@ structure Locals = struct
                                          end)
 
     (* Database tweaking, etc. *)
+    val sendEmails = requireAdmin;
+      Mail.send (Mail.to "mcoblenz@cs.cmu.edu" (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) "Hello, world" None
+
     val admin =
         requireAdmin;
         ia <- source "";
@@ -679,9 +693,13 @@ structure Locals = struct
                              <tr><td><a link={pi r.LocalName}>{[r.LocalName]}</a></td></tr>
                            </xml>);
 
+
+
         Theme.tabbed "Visit Weekend Admin"
                   ((Some "Locals",
                     EditLocal.ui),
+                    (Some "Email passwords to CMU users",
+                      Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all CMU users" onclick={fn _ => rpc sendEmails}/></xml>),
                    (Some "Import PIs", Ui.const <xml>
                       <p>Enter one PI record per line, with fields separated by commas.  The field order is: <i>CSAIL ID</i>, <i>name</i>, <i>office</i>.</p>
 
@@ -792,7 +810,7 @@ structure Locals = struct
                                                  val const = {}
                                                  con given = [LocalName = _]
                                                  con fixed = [CsailId = _, IsAdmin = _, IsPI = _,
-                                                              Attending = _, FiveMinute = _]
+                                                              Attending = _, FiveMinute = _, Password = _]
                                                  val tab = local
                                                  val chosenLabels = {PhoneNumber = "Mobile Phone#",
                                                                      DietaryRestriction = "Dietary Restriction",
@@ -829,7 +847,38 @@ val cookieSetup =
         <button value="Set" onclick={fn _ => v <- get sc; rpc (setIt v)}/>
         </xml>)}
 
+
+val doLogin (input) =  setCookie localC {Value = input.Username,
+                          Secure = False,
+                          Expires = None};
+                       setCookie localPassword {Value = input.Password,
+                          Secure = False,
+                          Expires = None};
+
+
+isAdmin <- authAdmin (input.Username, input.Password); 
+isLocalUser <- authLocal (input.Username, input.Password);
+                      if isAdmin then redirect (url Locals.admin)
+                      else if isLocalUser then return <xml><body>Local user</body></xml>
+                        else return <xml><body>Invalid username or password.</body></xml>
+
+
+val index = 
+	sc <- source "";
+	sc2 <- source "";
+	Theme.tabbed "CMU user login"
+	{1 = (Some "Login",
+		Ui.const <xml>
+			<form>
+			<p/>Username<textbox{#Username}/>
+			<p/>Password<password{#Password}/>
+			<submit action={doLogin} value="Submit"/>
+			</form>
+				</xml>)
+	}
+
 (* Dummy page to keep Ur/Web from garbage-collecting handlers within modules *)
+(*)
 val index = return <xml><body>
   <li><a link={cookieSetup}>Cookie set-up</a></li>
   <li><a link={Locals.admin}>Admin</a></li>
@@ -837,3 +886,5 @@ val index = return <xml><body>
   <li><a link={Locals.main}>Other locals</a></li>
   <li><a link={Admits.main 0}>Admits</a></li>
 </body></xml>
+*)
+

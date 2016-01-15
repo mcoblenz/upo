@@ -1,4 +1,5 @@
 library ../default
+library /usr/local/lib/urweb/ur/mail
 rewrite all Visit/*
 safeGet Locals/admin
 safeGet Locals/pi
