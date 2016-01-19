@@ -663,7 +663,11 @@ structure Locals = struct
 
     (* Database tweaking, etc. *)
     val sendEmails = requireAdmin;
-      Mail.send (Mail.to "mcoblenz@cs.cmu.edu" (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) "Hello, world" None
+            queryI1 (SELECT local.CsailId, local.Password
+                     FROM local)
+                    (fn r => Mail.send (Mail.to "mcoblenz@cs.cmu.edu" (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password) None)
+
+      
 
     val admin =
         requireAdmin;
