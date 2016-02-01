@@ -662,10 +662,15 @@ structure Locals = struct
                                          end)
 
     (* Database tweaking, etc. *)
-    val sendEmails = requireAdmin;
+    val sendEmailsToLocals = requireAdmin;
             queryI1 (SELECT local.CsailId, local.Password
                      FROM local)
-                    (fn r => Mail.send (Mail.to "mcoblenz@cs.cmu.edu" (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password) None)
+                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "no-reply@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password) None)
+
+    val sendEmailsToAdmits = requireAdmin;
+            queryI1 (SELECT admit.AdmitId, admit.AdmitName, admit.Email FROM admit)
+                      (fn r => Mail.send (Mail.to r.Email (Mail.from "no-reply@cs.cmu.edu" (Mail.subject "CMU CSD Visit Weekend RSVP" Mail.empty))) ("http://visit.cs.cmu.edu/" ^ show r.AdmitId) None)
+
 
       
 
@@ -703,7 +708,10 @@ structure Locals = struct
                   ((Some "Locals",
                     EditLocal.ui),
                     (Some "Email passwords to CMU users",
-                      Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all CMU users" onclick={fn _ => rpc sendEmails}/></xml>),
+                      Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all CMU users" onclick={fn _ => rpc sendEmailsToLocals}/></xml>),
+                     (Some "Email access links to admits",
+                      Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all admits" onclick={fn _ => rpc sendEmailsToAdmits}/></xml>),
+
                    (Some "Import PIs", Ui.const <xml>
                       <p>Enter one PI record per line, with fields separated by commas.  The field order is: <i>CSAIL ID</i>, <i>name</i>, <i>office</i>.</p>
 
@@ -796,8 +804,8 @@ structure Locals = struct
                         {admitsMasq}
                       </table>
                     </xml>),
-                  (Some "Madness",
-                   Madness.ui),
+                 (* (Some "Madness",
+                   Madness.ui), *)
                   (Some "Lodging",
                    Lodging.ui),
                   (Some "No RSVP",
