@@ -204,7 +204,7 @@ structure Dinners = Rsvp2.Make(struct
                                    val away = admit
                                    val event = dinner
 
-                                   val homeDataLabels = {DietaryRestriction = "Dietary Restriction", Transport = "Transportation", CsailId = "CSAIL ID"}
+                                   val homeDataLabels = {DietaryRestriction = "Dietary Restriction", Transport = "Transportation", CsailId = "CS username"}
                                    val homeSensitiveDataLabels = {PhoneNumber = "Phone Number"}
                                    val awayDataLabels = {DietaryRestriction = "Dietary Restriction"}
                                    val awaySensitiveDataLabels = {PhoneNumber = "Phone Number", Email = "E-mail Address"}
@@ -340,7 +340,7 @@ structure Locals = struct
     structure EditLocal = EditGrid.Make(struct
                                             con key = [LocalName = _]
                                             val tab = local
-                                            val labels = {CsailId = "CSAIL ID",
+                                            val labels = {CsailId = "CS username",
                                                           LocalName = "Name",
                                                           IsAdmin = "Admin?",
                                                           IsPI = "PI?",
@@ -464,7 +464,7 @@ structure Locals = struct
                                                          WHERE local.IsPI AND local.Attending
                                                          ORDER BY local.LocalName DESC)
                                             val labels = {LocalName = "Name",
-                                                          CsailId = "CSAIL ID"}
+                                                          CsailId = "CS username"}
                                         end)
 
     structure PiNoRsvp = SimpleQuery.Make(struct
@@ -475,7 +475,7 @@ structure Locals = struct
                                                            WHERE local.IsPI AND NOT local.Attending
                                                            ORDER BY local.LocalName DESC)
                                              val labels = {LocalName = "Name",
-                                                           CsailId = "CSAIL ID"}
+                                                           CsailId = "CS username"}
                                           end)
 
     (* PI portal *)
@@ -665,11 +665,11 @@ structure Locals = struct
     val sendEmailsToLocals = requireAdmin;
             queryI1 (SELECT local.CsailId, local.Password
                      FROM local)
-                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "no-reply@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password) None)
+                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "yano@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password ^ "\nTo access the system, log in at <a href=\"http://visit.cs.cmu.edu/visit/index\">http://visit.cs.cmu.edu/visit/index</a>.") None)
 
     val sendEmailsToAdmits = requireAdmin;
             queryI1 (SELECT admit.AdmitId, admit.AdmitName, admit.Email FROM admit)
-                      (fn r => Mail.send (Mail.to r.Email (Mail.from "no-reply@cs.cmu.edu" (Mail.subject "CMU CSD Visit Weekend RSVP" Mail.empty))) ("http://visit.cs.cmu.edu/" ^ show r.AdmitId) None)
+                      (fn r => Mail.send (Mail.to r.Email (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "CMU CSD Visit Weekend RSVP" Mail.empty))) ("http://visit.cs.cmu.edu/visit/Admits/main/" ^ show r.AdmitId) None)
 
 
       
@@ -706,14 +706,15 @@ structure Locals = struct
 
         Theme.tabbed "Visit Weekend Admin"
                   ((Some "Locals",
-                    EditLocal.ui),
+		  	 Ui.seq ((Ui.const <xml><p>Do not use this page to add local users. Instead, use the Import PIs tab.</p></xml>),
+                    	 	EditLocal.ui)),
                     (Some "Email passwords to CMU users",
                       Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all CMU users" onclick={fn _ => rpc sendEmailsToLocals}/></xml>),
                      (Some "Email access links to admits",
                       Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all admits" onclick={fn _ => rpc sendEmailsToAdmits}/></xml>),
 
                    (Some "Import PIs", Ui.const <xml>
-                      <p>Enter one PI record per line, with fields separated by commas.  The field order is: <i>CSAIL ID</i>, <i>name</i>, <i>office</i>.</p>
+                      <p>Enter one PI record per line, with fields separated by commas.  The field order is: <i>CS username</i>, <i>name</i>, <i>office</i>.</p>
 
                       <ctextarea source={ip} cols={20} class="form-control"/>
                       <button class="btn btn-primary"
