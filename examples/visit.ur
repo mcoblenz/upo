@@ -244,7 +244,7 @@ structure Meetings = MeetingGrid.Make(struct
                                                     | Some _ => return (Some {AdmitName = ""})
                                       end)
 
-val explainMeetings = Ui.h4 <xml>Each meeting slot ends when the next one begins, except for a break from 2:50 to 3:10. The meetings finish at 5:00.</xml>
+val explainMeetings = Ui.h4 <xml>Each meeting slot is 30 minutes, starting at the listed time.</xml>
 
 (* Pages intended for admits *)
 structure Admits = struct
@@ -320,17 +320,17 @@ structure Admits = struct
 
                        Ui.moded mode
                           (Ui.seq
-                               (Ui.h2 <xml>Your meeting schedule (Friday, March 6)</xml>,
+                               (Ui.h2 <xml>Your meeting schedule</xml>,
                                 explainMeetings,
                                 Meetings.Away.One.ui key))
                           (Ui.seq
                                (Ui.h2 <xml>People you would like to meet with</xml>,
                                 Meetings.Away.Prefs.ui key,
-                                Ui.h2 <xml>Times when you are unavailable for 1-on-1 meetings (Friday, March 6)</xml>,
+                                Ui.h2 <xml>Times when you are unavailable for 1-on-1 meetings</xml>,
                                 explainMeetings,
                                 Meetings.Away.Unavail.ui key)),
 
-                        Ui.h2 <xml>Research-area dinners (also Friday, March 6)</xml>,
+                        Ui.h2 <xml>Meals</xml>,
 
                         Dinners.Away.ui key))
 end
@@ -374,7 +374,7 @@ structure Locals = struct
     structure EditTime = EditGrid.Make(struct
                                            con rest = []
                                            val tab = time
-                                           val labels = {Time = "Time"}
+                                           val labels = {Time = "Date/Time"}
                                            val authorized = amAdmin
                                        end)
 
@@ -389,10 +389,9 @@ structure Locals = struct
     structure InputPi = InputStrings.Make(struct
                                               val const = {}
                                               con given = [LocalName = _]
-                                              con fixed = [CsailId = _, IsAdmin = _, IsPI = _, Attending = _, Password = _]
+                                              con fixed = [CsailId = _, IsAdmin = _, IsPI = _, Attending = _, Password = _, FiveMinute = _]
                                               val tab = local
-                                              val chosenLabels = {FiveMinute = "3-Minute-Madness Talk Title (if you want to give one the morning of March 6)",
-                                                                  PhoneNumber = "Mobile Phone#",
+                                              val chosenLabels = {PhoneNumber = "Mobile Phone#",
                                                                   DietaryRestriction = "Dietary Restriction",
                                                                   Office = "Office",
                                                                   Transport = "Transportation to dinner, if going (driving, shuttle with admits [if your dinner has a shuttle], ...)"}
@@ -539,7 +538,7 @@ structure Locals = struct
                          Ui.h2 <xml>Admitted students you want to meet with</xml>,
                          Meetings.Home.Prefs.ui key,
                          Ui.hr,
-                         Ui.h2 <xml>Times when you are unavailable (Friday, March 6)</xml>,
+                         Ui.h2 <xml>Times when you are unavailable</xml>,
                          explainMeetings,
                          Meetings.Home.Unavail.ui key)),
                    (if schMode then Some "Your Meetings" else None,
@@ -548,9 +547,9 @@ structure Locals = struct
                     Meetings.Home.FullGrid.ui),
                    (if schMode then Some "Meetings by Admit" else None,
                     Meetings.Away.FullGrid.ui (fn _ => return True)),
-                   (Some "Dinner RSVP",
+                   (Some "Meals RSVP",
                     Ui.seq
-                        (Ui.h3 <xml>All dinners are on Friday, March 6.</xml>,
+                        (Ui.h3 <xml>Please RSVP for at most one lunch on March 14!</xml>,
                          Dinners.HomePrivileged.ui key)),
                    (Some "Admits (RSVPd)",
                     Rsvp.ui),
@@ -736,7 +735,7 @@ structure Locals = struct
                                           rpc (importAdmits ia)}/>
                     </xml>),
                    (Some "Meeting Times", EditTime.ui),
-                   (Some "Dinners", EditDinner.ui),
+                   (Some "Meals", EditDinner.ui),
                    (Some "Mode", Ui.constM (fn ctx => <xml>
                      <dyn signal={md <- signal schMode;
                                   return (if md then <xml>
@@ -841,7 +840,7 @@ structure Locals = struct
         Theme.simple "Visit Weekend Local-Participant Portal"
                   (Ui.seq
                        (InputLocal.ui key,
-                        Ui.h2 <xml>Research-area dinners (Friday, March 6)</xml>,
+                        Ui.h2 <xml>Meals</xml>,
                         Dinners.Home.ui key))
 end
 
