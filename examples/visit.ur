@@ -17,8 +17,10 @@ table local : { CsailId : string, LocalName : string, IsAdmin : bool, IsPI : boo
   CONSTRAINT LocalName UNIQUE LocalName
 
 val localShow : show {LocalName : string} = mkShow (fn r => r.LocalName)
+val csailIdShow : show {CsailId : string} = mkShow (fn r => r.CsailId)
 val officeShow : show {Office : string} = mkShow (fn r => " (" ^ r.Office ^ ")")
 val localNameRead : read {LocalName : string} = mkRead' (fn s => Some {LocalName = s}) "localName"
+val csailIdRead : read {CsailId : string} = mkRead' (fn s => Some {CsailId = s}) "CS username"
 
 (* Admitted students *)
 table admit : { AdmitId : int, AdmitName : string, Attending : bool,
@@ -64,88 +66,92 @@ task initialize = fn () =>
 cookie localC : string
 cookie localPassword : string
 
-(* Find the common name of the authenticated user (via SSL certificates),
- * remembering this person in the DB, if successful. *)
-val authCsail =
-    lo <- getCookie localC;
-    case lo of
-        None => error <xml>You haven't set the cookie with your name.</xml>
-      | Some r => return r
 
 
-(* Fail if not authenticated as an admin. *)
-val amAdmin =
-    user <- authCsail;
+(* Check credentials as admin. *)
+val authAdmin (username : string, password : string) =
     oneRowE1 (SELECT COUNT( * ) > 0
               FROM local
-              WHERE local.LocalName = {[user]}
-                AND local.IsAdmin)
-
-val authAdmin (username, password) =
-    oneRowE1 (SELECT COUNT( * ) > 0
-              FROM local
-              WHERE local.LocalName = {[username]}
-                AND local.IsAdmin
+              WHERE local.CsailId = {[username]} 
+                AND local.IsAdmin 
                 AND local.Password = {[password]})
 
-val authLocal (username, password) =
+(* Check credentials as a generic local. *)
+val authLocal (username : string, password : string) =
     oneRowE1 (SELECT COUNT( * ) > 0
               FROM local
-              WHERE local.LocalName = {[username]}
+              WHERE local.CsailId = {[username]}
                 AND local.Password = {[password]})
 
+(* Return True iff we're logged in as an admin. *)
+val amAdmin = username <- getCookie localC;
+    	      password <- getCookie localPassword;
+	      case (username, password) of
+	      	   (Some u, Some p) => authAdmin(u, p)
+		  | _ => return False 
+
+val amLocal = username <- getCookie localC;
+    	      password <- getCookie localPassword;
+	      case (username, password) of
+	      	   (Some u, Some p) => authLocal(u, p)
+		  | _ => return False 
+
+val amPi = username <- getCookie localC;
+           password <- getCookie localPassword;
+	   case (username, password) of
+                   (Some u, Some p) =>
+		   	 oneRowE1 (SELECT COUNT( * ) > 0
+			               FROM local
+			          WHERE local.CsailId = {[u]}
+			      	    AND local.IsPI
+		                    AND local.Password = {[p]})
+	          | _ => return False
 
 val requireAdmin =
     isAdmin <- amAdmin;
     if isAdmin then
         return ()
     else
-        error <xml>Access denied</xml>
+        error <xml>Access denied to admin section</xml>
 
-(* Fail if not authenticated as a PI. *)
-val amPi =
-    user <- authCsail;
-    b <- oneRowE1 (SELECT COUNT( * ) > 0
-                   FROM local
-                   WHERE local.LocalName = {[user]}
-                     AND local.IsPI OR local.IsAdmin);
-    if b then
-        return (Some user)
+val requireLocal =
+    isLocal <- amLocal;
+    if isLocal then
+        return ()
     else
-        return None
+        error <xml>Access denied to local section</xml>
+
+val usernameLocal = 
+    isLocal <- amLocal;
+    lo <- getCookie localC;
+
+    case lo of
+    	  None => error <xml>Please report this bug.</xml>
+        | Some r => return r
 
 (* Surprise twist: masquerade mode, for admin to pretend to be another PI! *)
 cookie masquerade : string (* LocalName *)
 
-val amPiOrAdmin =
-    user <- authCsail;
-    b <- oneRowE1 (SELECT (COUNT( * ) > 0)
-                   FROM local
-                   WHERE local.LocalName = {[user]}
-                     AND (local.IsPI OR local.IsAdmin));
-    if b then
+val usernamePiOrAdmin =
+    requireLocal;
+    user <- getCookie localC;
+    isAdmin <- amAdmin;
+
+    if isAdmin then
         ma <- getCookie masquerade;
         (case ma of
-             None => return (Some user)
-           | Some _ =>
-             isAdmin <- oneRowE1 (SELECT (local.IsAdmin)
-                                  FROM local
-                                  WHERE local.LocalName = {[user]});
-             if isAdmin then
-                 return ma
-             else
-                 error <xml>Not authorized to masquerade</xml>)
+             None => return user
+           | Some _ => return ma)
     else
-        return None
+        return user
 
 val requirePi =
     isPi <- amPi;
-    case isPi of
-        None => error <xml>Access denied</xml>
-      | Some name => return name
+    if isPi then return (getCookie localC)
+    else  error <xml>Access denied</xml>
 
 val requirePiOrAdmin =
-    isPi <- amPiOrAdmin;
+    isPi <- usernamePiOrAdmin;
     case isPi of
         None => error <xml>Access denied</xml>
       | Some name => return name
@@ -171,40 +177,40 @@ val requireAdmit =
         None => error <xml>Not properly authenticated as an admitted student</xml>
       | Some r => return r
 
-val amHome = user <- authCsail; return (Some {LocalName = user})
+val amHome = user <- usernameLocal; return (Some {CsailId = user})
 val amHomeOrAdmin =
-    user <- authCsail;
+    user <- usernameLocal;
     ma <- getCookie masquerade;
     case ma of
-        None => return (Some {LocalName = user})
+        None => return (Some {CsailId = user})
       | Some ma =>
         isAdmin <- oneRowE1 (SELECT COUNT( * ) > 0
                              FROM local
-                             WHERE local.LocalName = {[user]}
+                             WHERE local.CsailId = {[user]}
                                AND local.IsAdmin);
         if isAdmin then
-            return (Some {LocalName = ma})
+            return (Some {CsailId = ma})
         else
             error <xml>Not authorized to masquerade</xml>
-val amPi = user <- requirePi; return (Some {LocalName = user})
-val amPiOrAdmin = user <- requirePiOrAdmin; return (Some {LocalName = user})
+val amPi = user <- requirePi; return (Some {CsailId = user})
+val amPiOrAdmin = user <- requirePiOrAdmin; return (Some {CsailId = user})
 val amAway = o <- admitId;
     return (case o of
                 None => None
               | Some (_, name) => Some {AdmitName = name})
 
 structure Dinners = Rsvp2.Make(struct
-                                   val homeLabel = "Locals"
-                                   val awayLabel = "Admits"
+                                   val homeLabel = "Faculty & Students"
+                                   val awayLabel = "Prospectives"
 
-                                   con homeKey = [LocalName = _]
+                                   con homeKey = [CsailId = _]
                                    con awayKey = [AdmitName = _]
 
                                    val home = local
                                    val away = admit
                                    val event = dinner
 
-                                   val homeDataLabels = {DietaryRestriction = "Dietary Restriction", Transport = "Transportation", CsailId = "CS username"}
+                                   val homeDataLabels = {DietaryRestriction = "Dietary Restriction", Transport = "Transportation", LocalName = "Name"}
                                    val homeSensitiveDataLabels = {PhoneNumber = "Phone Number"}
                                    val awayDataLabels = {DietaryRestriction = "Dietary Restriction"}
                                    val awaySensitiveDataLabels = {PhoneNumber = "Phone Number", Email = "E-mail Address"}
@@ -216,7 +222,7 @@ structure Dinners = Rsvp2.Make(struct
                                end)
 
 structure Meetings = MeetingGrid.Make(struct
-                                          con homeKey = [LocalName = _]
+	   	                          con homeKey = [CsailId = _]
                                           con homeOffice = [Office = _]
                                           con awayKey = [AdmitName = _]
                                           con awayFilter = []
@@ -338,7 +344,7 @@ end
 (* Pages intended for CSAILers *)
 structure Locals = struct
     structure EditLocal = EditGrid.Make(struct
-                                            con key = [LocalName = _]
+                                            con key = [CsailId = _]
                                             val tab = local
                                             val labels = {CsailId = "CS username",
                                                           LocalName = "Name",
@@ -388,8 +394,8 @@ structure Locals = struct
 
     structure InputPi = InputStrings.Make(struct
                                               val const = {}
-                                              con given = [LocalName = _]
-                                              con fixed = [CsailId = _, IsAdmin = _, IsPI = _, Attending = _, Password = _, FiveMinute = _]
+                                              con given = [CsailId = _]
+                                              con fixed = [LocalName = _, IsAdmin = _, IsPI = _, Attending = _, Password = _, FiveMinute = _]
                                               val tab = local
                                               val chosenLabels = {PhoneNumber = "Mobile Phone#",
                                                                   DietaryRestriction = "Dietary Restriction",
@@ -403,14 +409,14 @@ structure Locals = struct
         name <- requirePiOrAdmin;
         dml (UPDATE local
              SET Attending = TRUE
-             WHERE LocalName = {[name]})
+             WHERE CsailId = {[name]})
 
     val unrsvp =
         name <- requirePiOrAdmin;
         dml (UPDATE local
              SET Attending = FALSE
-             WHERE LocalName = {[name]});
-        Meetings.Home.deleteFor {LocalName = name}
+             WHERE CsailId = {[name]});
+        Meetings.Home.deleteFor {CsailId = name}
 
     structure Lodging = SimpleQuery.Make(struct
                                              con fs = [AdmitName = _, Email = _,
@@ -489,11 +495,11 @@ structure Locals = struct
                                    Secure = False});
 
         user <- requirePiOrAdmin;
-        key <- return {LocalName = user};
+        key <- return {CsailId = user};
 
         (attending, fivemin) <- oneRow (SELECT (local.Attending), (local.FiveMinute)
                                         FROM local
-                                        WHERE local.LocalName = {[user]});
+                                        WHERE local.CsailId = {[user]});
         attending <- source attending;
         fivemin <- source fivemin;
 
@@ -503,12 +509,12 @@ structure Locals = struct
         schMode <- oneRowE1 (SELECT COUNT( * ) > 0
                              FROM schedulingStarted);
 
-        Theme.tabbed "Visit Weekend PI Portal"
+        Theme.tabbed "CSD Open House Portal"
                   ((Some "Profile",
                     Ui.seq (Ui.const <xml>
                       <dyn signal={att <- signal attending;
                                    return (if att then <xml>
-                                     <h2>Current RSVP: <b>YES, can meet with students</b> on March 6</h2>
+                                     <h2>Current RSVP: <b>YES, can meet with students</b></h2>
                                      <button class="btn btn-primary"
                                               onclick={fn _ =>
                                                           rpc unrsvp;
@@ -516,7 +522,7 @@ structure Locals = struct
                                        Change RSVP to <b>NO</b>
                                      </button>
                                    </xml> else <xml>
-                                     <h2>Current RSVP: <b>NO, can't meet with students</b> on March 6</h2>
+                                     <h2>Current RSVP: <b>NO, can't meet with students</b></h2>
                                      <button class="btn btn-primary"
                                              onclick={fn _ =>
                                                          rpc rsvp;
@@ -551,13 +557,13 @@ structure Locals = struct
                     Ui.seq
                         (Ui.h3 <xml>Please RSVP for at most one lunch on March 14!</xml>,
                          Dinners.HomePrivileged.ui key)),
-                   (Some "Admits (RSVPd)",
+                   (Some "Prospectives (RSVPd)",
                     Rsvp.ui),
-                   (Some "Admits (No RSVP)",
+                   (Some "Prospectives (No RSVP)",
                     NoRsvp.ui),
-                   (Some "PIs (RSVPd)",
+                   (Some "Faculty/students (RSVPd)",
                     PiRsvp.ui),
-                   (Some "PIs (No RSVP)",
+                   (Some "Faculty/students (No RSVP)",
                     PiNoRsvp.ui))
 
     fun importPIs s =
@@ -664,11 +670,13 @@ structure Locals = struct
     val sendEmailsToLocals = requireAdmin;
             queryI1 (SELECT local.CsailId, local.Password
                      FROM local)
-                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "yano@cs.cmu.edu" (Mail.subject "Your CMU CSD Visit Weekend Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password ^ "\nTo access the system, log in at <a href=\"http://visit.cs.cmu.edu/visit/index\">http://visit.cs.cmu.edu/visit/index</a>.") None)
+                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "yano@cs.cmu.edu" (Mail.subject "Your CMU CSD Open House Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password ^ "\nTo access the system, log in at http://visit.cs.cmu.edu/visit/index.") None)
 
+(*
     val sendEmailsToAdmits = requireAdmin;
             queryI1 (SELECT admit.AdmitId, admit.AdmitName, admit.Email FROM admit)
-                      (fn r => Mail.send (Mail.to r.Email (Mail.from "mcoblenz@cs.cmu.edu" (Mail.subject "CMU CSD Visit Weekend RSVP" Mail.empty))) ("http://visit.cs.cmu.edu/visit/Admits/main/" ^ show r.AdmitId) None)
+                      (fn r => Mail.send (Mail.to r.Email (Mail.from "yano@cs.cmu.edu" (Mail.subject "CMU CSD Open House RSVP" Mail.empty))) ("http://visit.cs.cmu.edu/visit/Admits/main/" ^ (show r.AdmitId)) None)
+*)
 
 
       
@@ -693,27 +701,28 @@ structure Locals = struct
                                 <tr><td><a link={Admits.main r.AdmitId}>{[r.AdmitName]}</a></td></tr>
                               </xml>);
 
-        pisMasq <- queryX1 (SELECT local.LocalName
+        pisMasq <- queryX1 (SELECT local.CsailId
                             FROM local
                             WHERE local.IsPI
-                            ORDER BY local.LocalName)
+                            ORDER BY local.CsailId)
                            (fn r => <xml>
-                             <tr><td><a link={pi r.LocalName}>{[r.LocalName]}</a></td></tr>
+                             <tr><td><a link={pi r.CsailId}>{[r.CsailId]}</a></td></tr>
                            </xml>);
 
 
 
-        Theme.tabbed "Visit Weekend Admin"
-                  ((Some "Locals",
-		  	 Ui.seq ((Ui.const <xml><p>Do not use this page to add local users. Instead, use the Import PIs tab.</p></xml>),
+        Theme.tabbed "CSD Open House Admin"
+                  ((Some "Faculty & Students",
+		  	 Ui.seq ((Ui.const <xml><p>Do not use this page to add local users. Instead, use the Import Faculty/Students tab.</p></xml>),
                     	 	EditLocal.ui)),
                     (Some "Email passwords to CMU users",
                       Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all CMU users" onclick={fn _ => rpc sendEmailsToLocals}/></xml>),
-                     (Some "Email access links to admits",
+(*                     (Some "Email access links to admits",
                       Ui.const <xml><p/><button class="btn btn-primary" value="Send Emails to all admits" onclick={fn _ => rpc sendEmailsToAdmits}/></xml>),
+*)
 
-                   (Some "Import PIs", Ui.const <xml>
-                      <p>Enter one PI record per line, with fields separated by commas.  The field order is: <i>CS username</i>, <i>name</i>, <i>office</i>.</p>
+                   (Some "Import Faculty/Students", Ui.const <xml>
+                      <p>Enter one record per line, with fields separated by commas.  The field order is: <i>CS username</i>, <i>name</i>, <i>office</i>.</p>
 
                       <ctextarea source={ip} cols={20} class="form-control"/>
                       <button class="btn btn-primary"
@@ -722,14 +731,14 @@ structure Locals = struct
                                           ip <- get ip;
                                           rpc (importPIs ip)}/>
                     </xml>),
-                   (Some "Admits",
+                   (Some "Prospectives",
                     EditAdmit.ui),
-                   (Some "Import Admits", Ui.const <xml>
+                   (Some "Import Prospectives", Ui.const <xml>
                       <p>Enter one admit record per line, with fields separated by commas.  The field order is: <i>name</i>, <i>e-mail address</i>.</p>
 
                       <ctextarea source={ia} cols={20} class="form-control"/>
                       <button class="btn btn-primary"
-                              value="Import Admits"
+                              value="Import Prospectives"
                               onclick={fn _ =>
                                           ia <- get ia;
                                           rpc (importAdmits ia)}/>
@@ -792,13 +801,13 @@ structure Locals = struct
                              onclick={fn _ => rpc scheduleMore}/><br/>
                      (Will not disturb any existing meetings.)
                    </xml>)),
-                   (Some "PI Masquerade",
+                   (Some "Faculty/Student Masquerade",
                     Ui.const <xml>
                       <table class="bs3-table table-striped">
                         {pisMasq}
                       </table>
                     </xml>),
-                   (Some "Admit Masquerade",
+                   (Some "Prospective Student Masquerade",
                     Ui.const <xml>
                       <table class="bs3-table table-striped">
                         {admitsMasq}
@@ -812,16 +821,16 @@ structure Locals = struct
                    NoRsvp.ui),
                   (Some "All Dietary Restrictions",
                    Dietary.ui),
-                  (Some "PIs (RSVPd)",
+                  (Some "Faculty/Students (RSVPd)",
                    PiRsvp.ui),
-                  (Some "PIs (No RSVP)",
+                  (Some "Faculty/Students (No RSVP)",
                    PiNoRsvp.ui))
 
 
     structure InputLocal = InputStrings.Make(struct
                                                  val const = {}
-                                                 con given = [LocalName = _]
-                                                 con fixed = [CsailId = _, IsAdmin = _, IsPI = _,
+                                                 con given = [CsailId = _]
+                                                 con fixed = [LocalName = _, IsAdmin = _, IsPI = _,
                                                               Attending = _, FiveMinute = _, Password = _]
                                                  val tab = local
                                                  val chosenLabels = {PhoneNumber = "Mobile Phone#",
@@ -834,10 +843,10 @@ structure Locals = struct
 
     (* Rank-and-file participant portal *)
     val main =
-        user <- authCsail;
-        key <- return {LocalName = user};
+        user <- usernameLocal;
+        key <- return {CsailId = user};
         
-        Theme.simple "Visit Weekend Local-Participant Portal"
+        Theme.simple "CSD Open House - Participant Portal"
                   (Ui.seq
                        (InputLocal.ui key,
                         Ui.h2 <xml>Meals</xml>,
@@ -868,11 +877,11 @@ val doLogin (input) =  setCookie localC {Value = input.Username,
                           Expires = None};
 
 
-isAdmin <- authAdmin (input.Username, input.Password); 
-isLocalUser <- authLocal (input.Username, input.Password);
-                      if isAdmin then redirect (url Locals.admin)
-                      else if isLocalUser then return <xml><body>Local user</body></xml>
-                        else return <xml><body>Invalid username or password.</body></xml>
+			  isAdmin <- authAdmin (input.Username, input.Password);
+			  isLocalUser <- authLocal (input.Username, input.Password);
+                      	  if isAdmin then redirect (url Locals.admin)
+                      	     else if isLocalUser then redirect (url (Locals.pi ""))
+                             	  else return <xml><body>Invalid username or password.</body></xml>
 
 
 val index = 
