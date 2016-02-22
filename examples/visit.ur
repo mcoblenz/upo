@@ -669,8 +669,11 @@ structure Locals = struct
     (* Database tweaking, etc. *)
     val sendEmailsToLocals = requireAdmin;
             queryI1 (SELECT local.CsailId, local.Password
-                     FROM local)
-                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "yano@cs.cmu.edu" (Mail.subject "Your CMU CSD Open House Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password ^ "\nTo access the system, log in at http://visit.cs.cmu.edu/visit/index.") None)
+                     FROM local 
+		     WHERE NOT local.Attending
+		     ORDER BY local.CsailId DESC)
+                    (fn r => Mail.send (Mail.to (r.CsailId ^ "@cs.cmu.edu") (Mail.from "yano@cs.cmu.edu" (Mail.subject "Your CMU CSD Open House Password" Mail.empty))) (r.CsailId ^ ": " ^ r.Password ^ "\nTo access the system, log in at http://visit.cs.cmu.edu/visit/index. If you have not done so already, please let us know if will be around for Open House!") None)
+(*			(fn r => debug ("emailing to:" ^ (r.CsailId ^ "@cs.cmu.edu"))) *)
 
 (*
     val sendEmailsToAdmits = requireAdmin;
