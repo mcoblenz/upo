@@ -1,3 +1,5 @@
+limit heap 134217728
+minHeap 16384
 library ../default
 library /usr/local/lib/urweb/ur/mail
 rewrite all Visit/*
